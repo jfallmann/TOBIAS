@@ -9,183 +9,203 @@ Classes for working with genomic regions
 
 """
 
-import numpy as np
-import sys
 import re
-from copy import deepcopy
-import pyBigWig
-from collections import Counter
-import logging
+import sys
 import traceback
+from collections import Counter
+from copy import deepcopy
 
-from tobias.utils.logger import TobiasLogger
+import numpy as np
+import pyBigWig
 
 #Clustering
-import sklearn.preprocessing as preprocessing
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
+
+from tobias.utils.logger import TobiasLogger
 
 #--------------------------------------------------------------------------------------------------#
 #--------------------------------------------------------------------------------------------------#
 #--------------------------------------------------------------------------------------------------#
 
 class OneRegion(list):
+    nuc_to_pos = {"A": 0, "T": 1, "C": 2, "G": 3}
 
-	nuc_to_pos = {"A":0, "T":1, "C":2, "G":3}
+    def __init__(self, lst=["", 0, 0]):
+        super(OneRegion, self).__init__(iter(lst))
+        no_fields = len(lst)
 
-	def __init__(self, lst=["",0,0]):
+        # Required
+        self.chrom = lst[0]
+        self.start = int(lst[1])  # exclude start
+        self.end = int(lst[2])  # include end
 
-		super(OneRegion, self).__init__(iter(lst))
-		no_fields = len(lst)
+        # Optional
+        self.name = lst[3] if no_fields > 3 else ""
+        self.score = lst[4] if no_fields > 4 else ""
+        self.strand = lst[5] if no_fields > 5 else "."
 
-		#Required
-		self.chrom = lst[0]
-		self.start = int(lst[1])		#exclude start
-		self.end = int(lst[2])			#include end
+    def __str__(self):
+        return "{0}".format("\t".join(str(x) for x in self))
 
-		#Optional
-		self.name = lst[3] if no_fields > 3 else ""
-		self.score = lst[4] if no_fields > 4 else ""
-		self.strand = lst[5] if no_fields > 5 else "."
+    def tup(self):
+        return (self.chrom, self.start, self.end, self.name, self.strand)
 
-	def __str__(self):
-		return("{0}".format("\t".join(str(x) for x in self)))
-	
-	def tup(self):
-		return((self.chrom, self.start, self.end, self.name, self.strand))
-	
-	def pretty(self):
-		""" Pretty print of coordinates in the format chr:start-stop(strand) """
-		return("{0}:{1}-{2}({3})".format(self.chrom, self.start, self.end, self.strand))
+    def pretty(self):
+        """Pretty print of coordinates in the format chr:start-stop(strand)"""
+        return "{0}:{1}-{2}({3})".format(self.chrom, self.start, self.end, self.strand)
 
-	def update(self):
+    def update(self):
+        self[0] = self.chrom
+        self[1] = self.start
+        self[2] = self.end
 
-		self[0] = self.chrom
-		self[1] = self.start
-		self[2] = self.end
+    def get_length(self):
+        return self.end - self.start
 
-	def get_length(self):
-		return(self.end - self.start)
+    def get_width(self):
+        return self.end - self.start
 
-	def get_width(self):
-		return(self.end - self.start)
+    def extend_reg(self, bp):
+        """Extend region with bp to either side"""
 
-	def extend_reg(self, bp):
-		""" Extend region with bp to either side """
+        self.start -= bp
+        self[1] = self.start
 
-		self.start -= bp
-		self[1] = self.start
+        self.end += bp
+        self[2] = self.end
 
-		self.end += bp
-		self[2] = self.end
+        return self
 
-		return(self)
+    def set_width(self, bp):
+        """Set with of region centered on original region"""
 
-	def set_width(self, bp):
-		""" Set with of region centered on original region """
+        flank_5, flank_3 = (
+            int(np.floor(bp / 2.0)),
+            int(np.ceil(bp / 2.0)),
+        )  # flank 5', flank 3'
 
-		flank_5, flank_3 = int(np.floor(bp/2.0)), int(np.ceil(bp/2.0))  #flank 5', flank 3'
+        if self.strand == "-":
+            mid = int(np.ceil((self.start + self.end) / 2.0))
+            self.start = mid - flank_5
+            self.end = mid + flank_3
+        else:
+            mid = int(np.floor((self.start + self.end) / 2.0))
+            self.start = mid - flank_3
+            self.end = mid + flank_5
 
-		if self.strand == "-":
-			mid = int(np.ceil((self.start + self.end) / 2.0))
-			self.start = mid - flank_5
-			self.end = mid + flank_3
-		else:
-			mid = int(np.floor((self.start + self.end) / 2.0))
-			self.start = mid - flank_3
-			self.end = mid + flank_5
+        self[1] = self.start
+        self[2] = self.end
 
-		self[1] = self.start
-		self[2] = self.end
+        return self
 
-		return(self)
+    def split_region(self, max_length):
+        """Split genomic region into smaller subsets. Returns a RegionList of OneRegion objects"""
 
+        regions = RegionList()  # Empty regions object
 
-	def split_region(self, max_length):
-		""" Split genomic region into smaller subsets. Returns a RegionList of OneRegion objects """
+        starts = list(range(self.start, self.end, max_length))
+        ends = list(range(self.start + max_length, self.end, max_length)) + [self.end]
 
-		regions = RegionList() 	#Empty regions object
+        for start, end in zip(starts, ends):
+            regions.append(OneRegion([self.chrom, start, end]))
 
-		starts = list(range(self.start, self.end, max_length))
-		ends = list(range(self.start + max_length, self.end, max_length)) + [self.end]
+        return regions
 
-		for (start, end) in zip(starts, ends):
-			regions.append(OneRegion([self.chrom, start, end]))
+    def check_boundary(self, boundaries_dict, action="cut", logger=TobiasLogger()):
+        """Check if region is within chromosome boundaries. Actions:
+        - "cut": cut region to bounds. If the chromosome is not in boundaries_dict, "cut" falls back on "remove"
+        - "remove": remove region outside bounds (returns None)
+        - "exit": exit the program with error message through logger
+        """
 
-		return(regions)
+        # Establish if region is outside of bounds:
+        outside = 0
+        if self.chrom not in boundaries_dict:
+            logger.debug(
+                'Chromosome for region "{0}" is not found in list of available chromosomes. action: {1}'.format(
+                    self, action
+                )
+            )
+            if action == "exit":
+                logger.error(
+                    'Chromosome for region "{0}" is not found in list of available chromosomes ({1})'.format(
+                        self, list(boundaries_dict.keys())
+                    )
+                )
+                sys.exit(1)
 
+            self = None  # cannot cut to bounds when boundaries are not known; remove
+            return self
 
-	def check_boundary(self, boundaries_dict, action="cut", logger=TobiasLogger()):
-		""" Check if region is within chromosome boundaries. Actions:
-				- "cut": cut region to bounds. If the chromosome is not in boundaries_dict, "cut" falls back on "remove"
-				- "remove": remove region outside bounds (returns None)
-				- "exit": exit the program with error message through logger
-		"""
-		
-		#Establish if region is outside of bounds:
-		outside = 0
-		if self.chrom not in boundaries_dict:
-			if action == "exit":
-				logger.error("Chromosome for region \"{0}\" is not found in list of available chromosomes ({1})".format(self, list(boundaries_dict.keys())))
-				sys.exit(1)
+        elif self.start < 0:
+            outside = 1
+        elif self.end > int(boundaries_dict[self.chrom]):
+            outside = 1
 
-			self = None	#cannot cut to bounds when boundaries are not known; remove
-			return(self)
+        # Perform action if region is outside of bounds
+        if outside == 1:
+            if action == "cut":
+                self.start = max([0, self.start])
+                self.end = min([boundaries_dict[self.chrom], self.end])
 
-		elif self.start < 0:
-			outside = 1
-		elif self.end > int(boundaries_dict[self.chrom]):
-			outside = 1
+                # Update positions in list
+                self[1] = self.start
+                self[2] = self.end
 
-		#Perform action if region is outside of bounds
-		if outside == 1:
-			if action == "cut":
-				self.start = max([0, self.start])
-				self.end = min([boundaries_dict[self.chrom], self.end])
-				
-				#Update positions in list
-				self[1] = self.start
-				self[2] = self.end
+                # If the region has been cut to be 0 of less length; remove
+                if self.get_length() <= 0:
+                    self = None
 
-				#If the region has been cut to be 0 of less length; remove
-				if self.get_length() <= 0:
-					self = None
+            elif action == "remove":
+                self = None
 
-			elif action == "remove":
-				self = None
-				
-			elif action == "exit":
-				logger.error("Region \"{0}\" is outside of the chromosome boundaries ({1}: {2})".format(self, self.chrom, boundaries_dict[self.chrom]))
-				sys.exit(1)
+            elif action == "exit":
+                logger.error(
+                    'Region "{0}" is outside of the chromosome boundaries ({1}: {2})'.format(
+                        self, self.chrom, boundaries_dict[self.chrom]
+                    )
+                )
+                sys.exit(1)
 
-		return(self)
+        return self
 
-	def get_signal(self, pybw, numpy_bool = True, logger=TobiasLogger(), key=None):
-		""" Get signal from bigwig in region. key is a string which will be written in case of an error """
+    def get_signal(self, pybw, numpy_bool=True, logger=TobiasLogger(), key=None):
+        """Get signal from bigwig in region. key is a string which will be written in case of an error"""
 
-		try:
-			#Define whether pybigwig was compiled with numpy
-			if pyBigWig.numpy == 1:
-				values = pybw.values(self.chrom, self.start, self.end, numpy=numpy_bool)
-			else:
-				values = np.array(pybw.values(self.chrom, self.start, self.end)) #fetch list of values and convert to numpy arr
-			values = np.nan_to_num(values)	#nan to 0
-			
-			if self.strand == "-":
-				signal = values[::-1]
-			else:
-				signal = values
-				
-		except Exception as e:
-			if key is not None:
-				logger.error("Error reading region: {0} from pybigwig object ({1}). Exception is: {2}".format(self.tup(), key, e))
-			else:
-				logger.error("Error reading region: {0} from pybigwig object. Exception is: {1}".format(self.tup(), e))
+        try:
+            # Define whether pybigwig was compiled with numpy
+            if pyBigWig.numpy == 1:
+                values = pybw.values(self.chrom, self.start, self.end, numpy=numpy_bool)
+            else:
+                values = np.array(
+                    pybw.values(self.chrom, self.start, self.end)
+                )  # fetch list of values and convert to numpy arr
+            values = np.nan_to_num(values)  # nan to 0
 
-			traceback.print_tb(e.__traceback__)
-			raise e
-			
-		return(signal)	
+            if self.strand == "-":
+                signal = values[::-1]
+            else:
+                signal = values
+
+        except Exception as e:
+            if key is not None:
+                logger.error(
+                    "Error reading region: {0} from pybigwig object ({1}). Exception is: {2}".format(
+                        self.tup(), key, e
+                    )
+                )
+            else:
+                logger.error(
+                    "Error reading region: {0} from pybigwig object. Exception is: {1}".format(
+                        self.tup(), e
+                    )
+                )
+
+            traceback.print_tb(e.__traceback__)
+            raise e
+
+        return signal	
 
 
 #--------------------------------------------------------------------------------------------------#
