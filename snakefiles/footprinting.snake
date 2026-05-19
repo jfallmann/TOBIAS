@@ -117,7 +117,7 @@ checkpoint bindetect:
 	message: 
 		"Running BINDetect"
 	shell:
-		"TOBIAS BINDetect --motifs {input.motifs} --signals {input.footprints} --genome {input.genome} "
+		"python " + os.path.join(scripts_dir, "run_bindetect_safe.py") + " --motifs {input.motifs} --signals {input.footprints} --genome {input.genome} "
 		"--peaks {input.peaks} --peak_header {input.peak_header} --cores {threads} --outdir {output} {params} &> {log}; "
 
 		"mkdir -p " + os.path.join(OUTPUTDIR, "overview") + ";"
