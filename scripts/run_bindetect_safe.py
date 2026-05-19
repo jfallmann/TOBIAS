@@ -25,6 +25,23 @@ import tobias.utils.utilities as utilities
 from tobias.parsers import add_bindetect_arguments
 
 
+def _normalize_cli_aliases(argv):
+    """Translate legacy underscore argument names to dash-style argparse names."""
+
+    aliases = {
+        "--cond_names": "--cond-names",
+        "--peak_header": "--peak-header",
+        "--time_series": "--time-series",
+        "--motif_pvalue": "--motif-pvalue",
+        "--bound_pvalue": "--bound-pvalue",
+        "--cluster_threshold": "--cluster-threshold",
+        "--output_peaks": "--output-peaks",
+        "--norm_off": "--norm-off",
+        "--skip_excel": "--skip-excel",
+    }
+    return [aliases.get(token, token) for token in argv]
+
+
 def _safe_int(value, default):
     try:
         return int(value)
@@ -95,7 +112,8 @@ def main():
         parser.print_help()
         return 0
 
-    args = parser.parse_args()
+    normalized_argv = _normalize_cli_aliases(sys.argv[1:])
+    args = parser.parse_args(normalized_argv)
 
     # Monkeypatch both module references used by BINDetect.
     utilities.file_writer = bounded_file_writer
