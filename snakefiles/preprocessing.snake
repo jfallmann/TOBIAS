@@ -104,7 +104,7 @@ rule macs:
 	input:
 		lambda wildcards: id2bam[wildcards.condition][wildcards.sample_id]
 	output: 
-		macs = os.path.join(OUTPUTDIR, "peak_calling", "{condition}", "{sample_id}_peaks.broadPeak"),
+		macs = os.path.join(OUTPUTDIR, "peak_calling", "{condition}", "{sample_id}_peaks.broadPeak") if "broad" in config.get("macs", "--nomodel --shift -100 --extsize 200 --broad") else os.path.join(OUTPUTDIR, "peak_calling", "{condition}", "{sample_id}_peaks.narrowPeak"),
 		raw = os.path.join(OUTPUTDIR, "peak_calling", "{condition}", "{sample_id}_raw.bed")
 	log: 
 		os.path.join(OUTPUTDIR, "logs", "{condition}_{sample_id}_peak_calling.log")
@@ -219,7 +219,7 @@ rule uropa:
 		peaks = os.path.join(OUTPUTDIR, "peak_annotation", "all_merged_annotated.bed"),
 		header = os.path.join(OUTPUTDIR, "peak_annotation", "all_merged_annotated_header.txt"),
 	threads: 
-		99
+		workflow.cores
 	log: 
 		os.path.join(OUTPUTDIR, "logs", "uropa.log")
 	params:
