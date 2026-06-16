@@ -13,6 +13,10 @@ This wrapper monkeypatches BINDetect's writer function to:
 
 The maximum number of concurrently open handles can be controlled by
 environment variable TOBIAS_MAX_OPEN_FILES (default: 128).
+
+For very large motif sets, SciPy dendrogram plotting may exceed Python's
+default recursion depth. This wrapper raises recursion depth using
+TOBIAS_RECURSION_LIMIT (default: 20000).
 """
 
 import argparse
@@ -47,6 +51,17 @@ def _safe_int(value, default):
         return int(value)
     except Exception:
         return default
+
+
+def _ensure_recursion_limit():
+    """Raise recursion limit for large dendrogram plotting workloads."""
+
+    requested = max(
+        2000, _safe_int(os.environ.get("TOBIAS_RECURSION_LIMIT", "20000"), 20000)
+    )
+    current = sys.getrecursionlimit()
+    if requested > current:
+        sys.setrecursionlimit(requested)
 
 
 def bounded_file_writer(q, key_file_dict, args):
@@ -114,6 +129,10 @@ def main():
 
     normalized_argv = _normalize_cli_aliases(sys.argv[1:])
     args = parser.parse_args(normalized_argv)
+
+    # Avoid RecursionError in scipy.cluster.hierarchy.dendrogram for
+    # large motif collections.
+    _ensure_recursion_limit()
 
     # Monkeypatch both module references used by BINDetect.
     utilities.file_writer = bounded_file_writer
