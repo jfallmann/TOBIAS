@@ -37,7 +37,7 @@ rule plot_heatmaps_across:
 	conda:
 		"../environments/tobias.yaml"
 	shell:
-		"TOBIAS PlotHeatmap --signals {input.tracks} --output {output.heatmap} {params} --share_colorbar > {log}"
+		"python " + os.path.join(scripts_dir, "run_plotheatmap_safe.py") + " --signals {input.tracks} --output {output.heatmap} {params} --share_colorbar > {log}"
 
 #----------------------------------------------------------------#
 #------------------------- Venn diagrams ------------------------#
