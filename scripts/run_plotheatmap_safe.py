@@ -55,11 +55,32 @@ def safe_run_heatmap(args):
 
 
 def main():
-    # Use upstream parser
-    from tobias.parsers import add_plotheatmap_arguments
+    # Create argument parser locally since add_plotheatmap_arguments may not exist
+    parser = argparse.ArgumentParser(
+        description="Run TOBIAS PlotHeatmap with safe error handling"
+    )
 
-    parser = argparse.ArgumentParser()
-    parser = add_plotheatmap_arguments(parser)
+    # Define arguments based on TOBIAS PlotHeatmap CLI
+    parser.add_argument(
+        "--signals", nargs="+", required=True, help="Input signal files (bigWig format)"
+    )
+    parser.add_argument("--output", required=True, help="Output PDF file")
+    parser.add_argument(
+        "--TFBS",
+        nargs="+",
+        action="append",
+        required=True,
+        help="TFBS BED files (can be repeated for multiple conditions)",
+    )
+    parser.add_argument("--TFBS_labels", nargs="+", help="Labels for TFBS groups")
+    parser.add_argument("--signal_labels", nargs="+", help="Labels for signal files")
+    parser.add_argument("--title", help="Plot title")
+    parser.add_argument(
+        "--sort-by", type=int, help="Index of signal to sort by (-1 for last)"
+    )
+    parser.add_argument(
+        "--share_colorbar", action="store_true", help="Share colorbar across subplots"
+    )
 
     if len(sys.argv[1:]) == 0:
         parser.print_help()

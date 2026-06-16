@@ -26,7 +26,6 @@ from collections import OrderedDict
 
 import tobias.tools.bindetect as bindetect
 import tobias.utils.utilities as utilities
-from tobias.parsers import add_bindetect_arguments
 
 
 def _normalize_cli_aliases(argv):
@@ -120,8 +119,57 @@ def bounded_file_writer(q, key_file_dict, args):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser = add_bindetect_arguments(parser)
+    # Create argument parser locally since add_bindetect_arguments may not exist
+    parser = argparse.ArgumentParser(
+        description="Run TOBIAS BINDetect with bounded file handle management"
+    )
+
+    # Define core arguments based on TOBIAS BINDetect CLI
+    parser.add_argument("--motifs", required=True, help="Motif file (FASTA format)")
+    parser.add_argument(
+        "--signals", nargs="+", required=True, help="Signal files (bigWig format)"
+    )
+    parser.add_argument("--genome", required=True, help="Genome FASTA file")
+    parser.add_argument("--peaks", required=True, help="Peak file (BED format)")
+    parser.add_argument(
+        "--peak_header", "--peak-header", required=True, help="Peak header file"
+    )
+    parser.add_argument("--outdir", required=True, help="Output directory")
+    parser.add_argument(
+        "--cores", "--threads", type=int, default=1, help="Number of cores to use"
+    )
+    parser.add_argument(
+        "--cond_names", "--cond-names", nargs="+", help="Condition names"
+    )
+
+    # Optional arguments
+    parser.add_argument(
+        "--norm_off", "--norm-off", action="store_true", help="Turn off normalization"
+    )
+    parser.add_argument(
+        "--skip_excel", "--skip-excel", action="store_true", help="Skip Excel output"
+    )
+    parser.add_argument(
+        "--time_series", "--time-series", action="store_true", help="Time series mode"
+    )
+    parser.add_argument(
+        "--motif_pvalue", "--motif-pvalue", type=float, help="Motif p-value threshold"
+    )
+    parser.add_argument(
+        "--bound_pvalue", "--bound-pvalue", type=float, help="Bound p-value threshold"
+    )
+    parser.add_argument(
+        "--cluster_threshold",
+        "--cluster-threshold",
+        type=float,
+        help="Clustering threshold",
+    )
+    parser.add_argument(
+        "--output_peaks",
+        "--output-peaks",
+        action="store_true",
+        help="Output peak files",
+    )
 
     if len(sys.argv[1:]) == 0:
         parser.print_help()
