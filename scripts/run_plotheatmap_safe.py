@@ -11,9 +11,35 @@ Why this exists:
 """
 
 import argparse
+import os
 import sys
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import tobias.tools.plot_heatmap as plot_heatmap
+from matplotlib.backends.backend_pdf import PdfPages
+
+
+def _write_placeholder_pdf(output_path, message):
+    """Write a minimal PDF with an error message so Snakemake sees the output file."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with PdfPages(output_path) as pdf:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.axis("off")
+        ax.text(
+            0.5,
+            0.5,
+            message,
+            ha="center",
+            va="center",
+            fontsize=12,
+            wrap=True,
+            transform=ax.transAxes,
+        )
+        pdf.savefig(fig, bbox_inches="tight")
+        plt.close(fig)
 
 
 def safe_run_heatmap(args):
@@ -47,8 +73,18 @@ def safe_run_heatmap(args):
                     f"ERROR: PlotHeatmap still failed after fallback: {e2}",
                     file=sys.stderr,
                 )
-                # Exit gracefully with a warning rather than crashing
-                sys.exit(1)
+                # Write a placeholder PDF so Snakemake sees the expected output
+                # file and does not fail the entire pipeline for this TF.
+                placeholder_msg = (
+                    f"PlotHeatmap could not be generated.\n"
+                    f"Likely cause: no binding sites found in one or more conditions.\n"
+                    f"Error: {e2}"
+                )
+                _write_placeholder_pdf(args.output, placeholder_msg)
+                print(
+                    f"WARNING: Wrote placeholder PDF to {args.output}",
+                    file=sys.stderr,
+                )
         else:
             # Re-raise if it's a different IndexError
             raise
