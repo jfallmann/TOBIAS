@@ -94,6 +94,11 @@ def main():
 
     args = parser.parse_args()
 
+    # Handle --sort-by argument name conversion (argparse converts to sort_by)
+    if hasattr(args, "sort_by") and args.sort_by is not None:
+        # Ensure it's accessible as sortby for compatibility
+        args.sortby = args.sort_by
+
     # Run with safe error handling
     safe_run_heatmap(args)
     return 0
