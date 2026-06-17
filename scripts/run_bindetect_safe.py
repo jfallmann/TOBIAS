@@ -170,6 +170,12 @@ def main():
         action="store_true",
         help="Output peak files",
     )
+    parser.add_argument(
+        "--verbosity",
+        type=int,
+        default=0,
+        help="Verbosity level for logging (default: 0)",
+    )
 
     if len(sys.argv[1:]) == 0:
         parser.print_help()

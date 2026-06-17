@@ -81,6 +81,12 @@ def main():
     parser.add_argument(
         "--share_colorbar", action="store_true", help="Share colorbar across subplots"
     )
+    parser.add_argument(
+        "--verbosity",
+        type=int,
+        default=0,
+        help="Verbosity level for logging (default: 0)",
+    )
 
     if len(sys.argv[1:]) == 0:
         parser.print_help()
