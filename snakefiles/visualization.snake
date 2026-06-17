@@ -140,5 +140,5 @@ rule lineplot_changes:
 	conda:
 		"../environments/tobias.yaml"
 	shell:
-		"filter_important_factors.py -in {input} -filter 5 -o {output.out} > {output.tfs};"
+		"python " + os.path.join(scripts_dir, "run_filter_important_factors_safe.py") + " -in {input} -filter 5 -o {output.out} > {output.tfs};"
 		"TOBIAS PlotChanges --bindetect {input} --TFS {output.tfs} --output {output.lineplot} > {log}"
