@@ -153,22 +153,59 @@ def main():
         "--time_series", "--time-series", action="store_true", help="Time series mode"
     )
     parser.add_argument(
-        "--motif_pvalue", "--motif-pvalue", type=float, help="Motif p-value threshold"
+        "--motif_pvalue",
+        "--motif-pvalue",
+        type=float,
+        default=0.0001,
+        help="Motif p-value threshold (default: 0.0001)",
     )
     parser.add_argument(
-        "--bound_pvalue", "--bound-pvalue", type=float, help="Bound p-value threshold"
+        "--bound_pvalue",
+        "--bound-pvalue",
+        type=float,
+        default=0.001,
+        help="Bound p-value threshold (default: 0.001)",
     )
     parser.add_argument(
         "--cluster_threshold",
         "--cluster-threshold",
         type=float,
-        help="Clustering threshold",
+        default=0.5,
+        help="Clustering threshold (default: 0.5)",
     )
     parser.add_argument(
         "--output_peaks",
         "--output-peaks",
+        default=None,
+        help="Output peak set (bed file path; default: same as --peaks)",
+    )
+    parser.add_argument(
+        "--naming",
+        choices=["id", "name", "name_id", "id_name"],
+        default="name_id",
+        help="Naming convention for TF output files (default: name_id)",
+    )
+    parser.add_argument(
+        "--split",
+        type=int,
+        default=100,
+        help="Split of multiprocessing jobs (default: 100)",
+    )
+    parser.add_argument(
+        "--prefix",
+        default="bindetect",
+        help="Prefix for overview output files (default: bindetect)",
+    )
+    parser.add_argument(
+        "--pseudo",
+        type=float,
+        default=None,
+        help="Pseudocount for log2fc calculation (default: estimated from data)",
+    )
+    parser.add_argument(
+        "--debug",
         action="store_true",
-        help="Output peak files",
+        help="Create additional debug PDF with extra plots",
     )
     parser.add_argument(
         "--verbosity",

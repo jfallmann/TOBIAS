@@ -87,6 +87,25 @@ def main():
         default=0,
         help="Verbosity level for logging (default: 0)",
     )
+    parser.add_argument(
+        "--show_columns", nargs="+", default=[], help="Columns to show in heatmap"
+    )
+    parser.add_argument(
+        "--flank",
+        type=int,
+        default=200,
+        help="Flanking bp around TFBS center (default: 200)",
+    )
+    parser.add_argument(
+        "--cmap",
+        default="seismic",
+        help="Matplotlib colormap name (default: seismic)",
+    )
+    parser.add_argument(
+        "--plot_boundaries",
+        action="store_true",
+        help="Plot motif boundary lines on heatmap",
+    )
 
     if len(sys.argv[1:]) == 0:
         parser.print_help()
