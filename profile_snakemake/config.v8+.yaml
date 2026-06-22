@@ -1,0 +1,59 @@
+default-resources:
+  slurm_account: "pau"
+  nodes: 1
+  mem_mb: "min(20000 * (2 ** (attempt - 1)), 40000)"
+  runtime: "min(60 * (2 ** (attempt - 1)), 120)"
+  threads: 1
+  qos: short
+  partition: c
+
+set-resources:
+  run_deseq2:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+    runtime: "min(720 * (2 ** (attempt - 1)), 10080)"
+    qos: "('long' if min(720 * (2 ** (attempt - 1)), 10080) > 2880 else 'medium')"
+    partition: "('c_long' if min(720 * (2 ** (attempt - 1)), 10080) > 2880 else 'c_medium')"
+  run_edger:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+    runtime: "min(720 * (2 ** (attempt - 1)), 10080)"
+    qos: "('long' if min(720 * (2 ** (attempt - 1)), 10080) > 2880 else 'medium')"
+    partition: "('c_long' if min(720 * (2 ** (attempt - 1)), 10080) > 2880 else 'c_medium')"
+  run_DTU:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+    runtime: "min(720 * (2 ** (attempt - 1)), 10080)"
+    qos: "('long' if min(720 * (2 ** (attempt - 1)), 10080) > 2880 else 'medium')"
+    partition: "('c_long' if min(720 * (2 ** (attempt - 1)), 10080) > 2880 else 'c_medium')"
+  gridss_call:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+    threads: 8
+    partition: "('g_long' if min(480 * (2 ** (attempt - 1)), 960) > 2880 else 'g_medium' if min(480 * (2 ** (attempt - 1)), 960) > 1440 else 'g_short')"
+    qos: "('long' if min(480 * (2 ** (attempt - 1)), 960) > 2880 else 'medium' if min(480 * (2 ** (attempt - 1)), 960) > 1440 else 'short')"
+  gridss_setupreference:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+    threads: 8
+    partition: "('g_long' if min(480 * (2 ** (attempt - 1)), 960) > 2880 else 'g_medium' if min(480 * (2 ** (attempt - 1)), 960) > 1440 else 'g_short')"
+    qos: "('long' if min(480 * (2 ** (attempt - 1)), 960) > 2880 else 'medium' if min(480 * (2 ** (attempt - 1)), 960) > 1440 else 'short')"
+  generate_index:
+    mem_mb: "min(80000 * (2 ** (attempt - 1)), 140000)"
+  mapping:
+    mem_mb: "min(80000 * (2 ** (attempt - 1)), 140000)"
+  sortsam:
+    mem_mb: "min(16000 * (2 ** (attempt - 1)), 64000)"
+    runtime: "min(480 * (2 ** (attempt - 1)), 960)"
+  multiqc:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+  atacorrect:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+  bindetect:
+    mem_mb: "min(60000 * (2 ** (attempt - 1)), 140000)"
+  salmon_index:
+    mem_mb: "min(40000 * (2 ** (attempt - 1)), 120000)"
+
+jobs: 1000
+keep-going: true
+rerun-incomplete: true
+scheduler: greedy
+max-jobs-per-second: 10
+max-status-checks-per-second: 10
+restart-times: 1
+local-cores: 1
