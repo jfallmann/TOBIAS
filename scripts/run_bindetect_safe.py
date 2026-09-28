@@ -111,6 +111,7 @@ def _preflight_checks(args):
 
     peak_columns = None
     peak_chroms = set()
+    peak_regions = []  # (lineno, chrom, start, end)
     n_peaks = 0
     with open(args.peaks) as fh:
         for lineno, line in enumerate(fh, 1):
@@ -128,6 +129,13 @@ def _preflight_checks(args):
                     f"{len(cols)} columns."
                 )
             peak_chroms.add(cols[0])
+            try:
+                peak_regions.append((lineno, cols[0], int(cols[1]), int(cols[2])))
+            except (ValueError, IndexError):
+                _preflight_fail(
+                    f"--peaks '{args.peaks}' line {lineno} has non-numeric "
+                    f"start/end columns: {cols[:3]}"
+                )
     if n_peaks == 0:
         _preflight_fail(f"--peaks file '{args.peaks}' is empty.")
     print(
@@ -145,21 +153,45 @@ def _preflight_checks(args):
                 f"columns but --peaks has {peak_columns} columns."
             )
 
+    def _check_region_bounds(source_label, chrom_lengths):
+        """Mirror TOBIAS' OneRegion.check_boundary(..., action='exit'):
+        chrom must exist, start must be >= 0, end must be <= chrom length."""
+
+        missing_chroms = peak_chroms - set(chrom_lengths.keys())
+        if missing_chroms:
+            _preflight_fail(
+                f"{len(missing_chroms)} chromosome name(s) in --peaks are not "
+                f"present in {source_label}. Examples missing: "
+                f"{sorted(missing_chroms)[:10]}. {source_label} contains e.g.: "
+                f"{sorted(chrom_lengths.keys())[:10]}. This usually indicates a "
+                "'chr' prefix mismatch (e.g. '1' vs 'chr1') or wrong genome build."
+            )
+        n_out_of_bounds = 0
+        first_offender = None
+        for lineno, chrom, start, end in peak_regions:
+            length = chrom_lengths[chrom]
+            if start < 0 or end > length:
+                n_out_of_bounds += 1
+                if first_offender is None:
+                    first_offender = (lineno, chrom, start, end, length)
+        if n_out_of_bounds:
+            lineno, chrom, start, end, length = first_offender
+            _preflight_fail(
+                f"{n_out_of_bounds} region(s) in --peaks fall outside the "
+                f"chromosome boundaries defined by {source_label}. First "
+                f"offender at line {lineno}: '{chrom}:{start}-{end}' but "
+                f"{chrom} is only {length} bp long in {source_label}. This "
+                "typically means --peaks was generated against a different "
+                "genome build/version than --genome/--signals."
+            )
+
     try:
         import pysam
 
         fasta = pysam.FastaFile(args.genome)
-        fasta_chroms = set(fasta.references)
+        fasta_lengths = dict(zip(fasta.references, fasta.lengths))
         fasta.close()
-        missing = peak_chroms - fasta_chroms
-        if missing:
-            _preflight_fail(
-                f"{len(missing)} chromosome name(s) in --peaks are not present "
-                f"in --genome '{args.genome}'. Examples missing: "
-                f"{sorted(missing)[:10]}. Genome contains e.g.: "
-                f"{sorted(fasta_chroms)[:10]}. This usually indicates a 'chr' "
-                "prefix mismatch (e.g. '1' vs 'chr1') or wrong genome build."
-            )
+        _check_region_bounds(f"--genome '{args.genome}'", fasta_lengths)
     except ImportError:
         print(
             "[run_bindetect_safe]   WARNING: pysam not available, skipping "
@@ -172,17 +204,9 @@ def _preflight_checks(args):
 
         for sig in args.signals:
             bw = pyBigWig.open(sig)
-            bw_chroms = set(bw.chroms().keys())
+            bw_lengths = dict(bw.chroms())
             bw.close()
-            missing = peak_chroms - bw_chroms
-            if missing:
-                _preflight_fail(
-                    f"{len(missing)} chromosome name(s) in --peaks are not "
-                    f"present in --signals file '{sig}'. Examples missing: "
-                    f"{sorted(missing)[:10]}. Signal file contains e.g.: "
-                    f"{sorted(bw_chroms)[:10]}. This usually indicates a 'chr' "
-                    "prefix mismatch or wrong genome build."
-                )
+            _check_region_bounds(f"--signals file '{sig}'", bw_lengths)
     except ImportError:
         print(
             "[run_bindetect_safe]   WARNING: pyBigWig not available, skipping "
