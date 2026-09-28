@@ -218,7 +218,7 @@ def _preflight_checks(args):
         from tobias.utils.motifs import MotifList
         from tobias.utils.utilities import expand_dirs
 
-        motif_files = expand_dirs([args.motifs])
+        motif_files = expand_dirs(args.motifs)
         total_motifs = 0
         for f in motif_files:
             try:
@@ -397,6 +397,17 @@ def main():
 
     normalized_argv = _normalize_cli_aliases(sys.argv[1:])
     args = parser.parse_args(normalized_argv)
+
+    # Upstream TOBIAS defines --motifs with nargs="*" (a list) and later does
+    # `args.motifs = expand_dirs(args.motifs)`, which iterates over
+    # args.motifs assuming it is a list of paths. Our --motifs is declared
+    # without nargs, so args.motifs is a plain string; iterating over a
+    # string yields individual characters instead of the file path, causing
+    # a confusing "No such file or directory: 'T'" error deep inside
+    # BINDetect. Normalize to a list here so downstream code behaves as
+    # upstream expects.
+    if isinstance(args.motifs, str):
+        args.motifs = [args.motifs]
 
     print("[run_bindetect_safe] Parsed arguments:", flush=True)
     for key, value in sorted(vars(args).items()):
