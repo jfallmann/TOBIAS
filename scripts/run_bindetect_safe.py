@@ -20,9 +20,29 @@ TOBIAS_RECURSION_LIMIT (default: 20000).
 """
 
 import argparse
+import faulthandler
 import os
+import signal
 import sys
+import traceback
 from collections import OrderedDict
+
+# Ensure stdout/stderr are unbuffered/line-buffered so that any output
+# (including tracebacks) is flushed even if the process is terminated
+# abruptly, instead of being lost in an internal buffer.
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
+# Dump a Python traceback to stderr if the process receives a terminating
+# signal (e.g. SIGTERM from Slurm on timeout, SIGSEGV) so the cause is
+# visible in the log instead of leaving it empty.
+faulthandler.enable()
+for _sig in ("SIGTERM", "SIGUSR1", "SIGUSR2"):
+    if hasattr(signal, _sig):
+        try:
+            faulthandler.register(getattr(signal, _sig), all_threads=True, chain=True)
+        except Exception:
+            pass
 
 import tobias.tools.bindetect as bindetect
 import tobias.utils.utilities as utilities
@@ -221,6 +241,15 @@ def main():
     normalized_argv = _normalize_cli_aliases(sys.argv[1:])
     args = parser.parse_args(normalized_argv)
 
+    print("[run_bindetect_safe] Parsed arguments:", flush=True)
+    for key, value in sorted(vars(args).items()):
+        print(f"[run_bindetect_safe]   {key} = {value!r}", flush=True)
+    print(
+        f"[run_bindetect_safe] TOBIAS_MAX_OPEN_FILES={os.environ.get('TOBIAS_MAX_OPEN_FILES', '128')} "
+        f"TOBIAS_RECURSION_LIMIT={os.environ.get('TOBIAS_RECURSION_LIMIT', '20000')}",
+        flush=True,
+    )
+
     # Avoid RecursionError in scipy.cluster.hierarchy.dendrogram for
     # large motif collections.
     _ensure_recursion_limit()
@@ -229,7 +258,21 @@ def main():
     utilities.file_writer = bounded_file_writer
     bindetect.file_writer = bounded_file_writer
 
-    bindetect.run_bindetect(args)
+    try:
+        bindetect.run_bindetect(args)
+    except SystemExit as exc:
+        print(
+            f"[run_bindetect_safe] run_bindetect() called sys.exit({exc.code!r})",
+            flush=True,
+        )
+        raise
+    except BaseException:
+        print("[run_bindetect_safe] run_bindetect() raised an exception:", flush=True)
+        traceback.print_exc(file=sys.stdout)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        return 1
+
     return 0
 
 
