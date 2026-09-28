@@ -117,8 +117,20 @@ checkpoint bindetect:
 	message: 
 		"Running BINDetect"
 	shell:
+		#Start from a clean slate: a directory() output is never auto-removed by Snakemake on
+		#failure, so a partial/crashed run from a previous attempt could otherwise be mistaken
+		#for a completed checkpoint on the next invocation.
+		"rm -rf {output}; "
+
 		"PYTHONUNBUFFERED=1 python " + os.path.join(scripts_dir, "run_bindetect_safe.py") + " --motifs {input.motifs} --signals {input.footprints} --genome {input.genome} "
-		"--peaks {input.peaks} --peak_header {input.peak_header} --cores {threads} --outdir {output} {params} &> {log}; "
+		"--peaks {input.peaks} --peak_header {input.peak_header} --cores {threads} --outdir {output} {params} &> {log} "
+		"|| (rm -rf {output}; exit 1); "
+
+		#Guard against a silent partial success: only proceed if BINDetect actually wrote its
+		#final summary file. Otherwise remove the directory so the checkpoint is correctly
+		#seen as incomplete and reruns next time.
+		"test -f " + os.path.join(OUTPUTDIR, "TFBS", "bindetect_results.txt") + " || "
+		"(echo 'bindetect_results.txt missing after run' >> {log}; rm -rf {output}; exit 1); "
 
 		"mkdir -p " + os.path.join(OUTPUTDIR, "overview") + ";"
 		"cp " + os.path.join(OUTPUTDIR, "TFBS", "*.txt") + " " + os.path.join(OUTPUTDIR, "overview") + ";"	#move files to overview
