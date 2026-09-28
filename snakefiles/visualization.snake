@@ -129,7 +129,7 @@ rule join_pdfs:
 
 rule lineplot_changes:
 	input:
-		lambda wildcards: os.path.join(checkpoints.bindetect.get(**wildcards).output[0], "bindetect_results.txt")
+		lambda wildcards: checkpoints.bindetect.get(**wildcards).output.results
 	output:
 		out = os.path.join(OUTPUTDIR, "overview", "bindetect_results_subset.txt"),
 		tfs = os.path.join(OUTPUTDIR, "overview", "most_changed_TFs.txt"),

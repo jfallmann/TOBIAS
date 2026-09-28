@@ -97,14 +97,17 @@ checkpoint bindetect:
 		peaks = config["run_info"]["peaks"],			#os.path.join(OUTPUTDIR, "peak_annotation", "all_merged_annotated.bed"),
 		peak_header = config["run_info"]["peaks_header"] 	#os.path.join(OUTPUTDIR, "peak_annotation", "all_merged_annotated_header.txt")
 	output:
-		directory(os.path.join(OUTPUTDIR, "TFBS"))
-		#os.path.join(OUTPUTDIR, "overview", "bindetect_results.txt")
-		#bound_files = dynamic(expand(os.path.join(OUTPUTDIR, "TFBS", "{{TF}}", "beds", "{{TF}}_{condition}_bound.bed"), condition=CONDITION_IDS)), #, TF={TF}"),
-		#unbound_files = expand(os.path.join(OUTPUTDIR, "TFBS", "{TF}", "beds", "{TF}_{condition}_unbound.bed"), condition=CONDITION_IDS, TF=TF_IDS),
-		#all_files = expand(os.path.join(OUTPUTDIR, "TFBS", "{TF}", "beds", "{TF}_all.bed"), TF=TF_IDS),
-		#overview = dynamic(expand(os.path.join(OUTPUTDIR, "TFBS", "{{TF}}", "{{TF}}_overview.txt"))),
-		#figures = os.path.join(OUTPUTDIR, "TFBS", "bindetect_figures.pdf"),
-		#local = [os.path.join(OUTPUTDIR, "TFBS", fil) for fil in ["bindetect_results.txt", "bindetect_results.xlsx"]],
+		#directory() is required because BINDetect creates one subdirectory per motif/TF, and
+		#the number/names of TFs is not known until the run completes (needed for the dynamic
+		#glob_wildcards() lookup in get_TF_ids() further down). However, that alone only lets
+		#Snakemake check that the directory *exists* - not that BINDetect actually finished
+		#successfully. Declaring the two fixed summary files below as explicit outputs makes
+		#Snakemake track their existence/mtime properly, so a crashed/partial run (e.g. OOM
+		#during the final plotting step) is correctly detected as incomplete and reruns
+		#automatically - no manual directory inspection or cleanup needed.
+		directory(os.path.join(OUTPUTDIR, "TFBS")),
+		results = os.path.join(OUTPUTDIR, "TFBS", "bindetect_results.txt"),
+		figures = os.path.join(OUTPUTDIR, "TFBS", "bindetect_figures.pdf"),
 	threads: 99	
 	priority: 2
 	conda:
@@ -117,20 +120,12 @@ checkpoint bindetect:
 	message: 
 		"Running BINDetect"
 	shell:
-		#Start from a clean slate: a directory() output is never auto-removed by Snakemake on
-		#failure, so a partial/crashed run from a previous attempt could otherwise be mistaken
-		#for a completed checkpoint on the next invocation.
-		"rm -rf {output}; "
+		#Clean start: remove any leftovers from a previous (e.g. crashed) attempt so BINDetect
+		#doesn't mix stale per-TF outputs with new ones.
+		"rm -rf {output[0]}; "
 
 		"PYTHONUNBUFFERED=1 python " + os.path.join(scripts_dir, "run_bindetect_safe.py") + " --motifs {input.motifs} --signals {input.footprints} --genome {input.genome} "
-		"--peaks {input.peaks} --peak_header {input.peak_header} --cores {threads} --outdir {output} {params} &> {log} "
-		"|| (rm -rf {output}; exit 1); "
-
-		#Guard against a silent partial success: only proceed if BINDetect actually wrote its
-		#final summary file. Otherwise remove the directory so the checkpoint is correctly
-		#seen as incomplete and reruns next time.
-		"test -f " + os.path.join(OUTPUTDIR, "TFBS", "bindetect_results.txt") + " || "
-		"(echo 'bindetect_results.txt missing after run' >> {log}; rm -rf {output}; exit 1); "
+		"--peaks {input.peaks} --peak_header {input.peak_header} --cores {threads} --outdir {output[0]} {params} &> {log}; "
 
 		"mkdir -p " + os.path.join(OUTPUTDIR, "overview") + ";"
 		"cp " + os.path.join(OUTPUTDIR, "TFBS", "*.txt") + " " + os.path.join(OUTPUTDIR, "overview") + ";"	#move files to overview
