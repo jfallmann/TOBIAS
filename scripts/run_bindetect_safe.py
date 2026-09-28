@@ -83,6 +83,139 @@ def _ensure_recursion_limit():
         sys.setrecursionlimit(requested)
 
 
+def _preflight_fail(msg):
+    print(f"[run_bindetect_safe] PRE-FLIGHT CHECK FAILED: {msg}", flush=True)
+    sys.exit(1)
+
+
+def _preflight_checks(args):
+    """Replicate BINDetect's own input validation up front and report any
+    failure with a clear, flushed message.
+
+    BINDetect logs errors through a multiprocessing queue/listener and then
+    calls sys.exit(1) immediately; if the process tears down before the
+    queued log record is drained, the actual reason is lost (only the
+    sys.exit(1) is visible). Running the same checks here, printed directly
+    and flushed, avoids that race.
+    """
+
+    print("[run_bindetect_safe] Running pre-flight checks...", flush=True)
+
+    if len(args.cond_names or []) != len(args.signals):
+        _preflight_fail(
+            f"--cond_names has {len(args.cond_names or [])} entries but "
+            f"--signals has {len(args.signals)} entries; they must match."
+        )
+    if args.cond_names and len(args.cond_names) != len(set(args.cond_names)):
+        _preflight_fail(f"--cond_names contains duplicate values: {args.cond_names}")
+
+    peak_columns = None
+    peak_chroms = set()
+    n_peaks = 0
+    with open(args.peaks) as fh:
+        for lineno, line in enumerate(fh, 1):
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            cols = line.split("\t")
+            n_peaks += 1
+            if peak_columns is None:
+                peak_columns = len(cols)
+            elif len(cols) != peak_columns:
+                _preflight_fail(
+                    f"--peaks '{args.peaks}' has inconsistent column counts: "
+                    f"line 1 has {peak_columns} columns, line {lineno} has "
+                    f"{len(cols)} columns."
+                )
+            peak_chroms.add(cols[0])
+    if n_peaks == 0:
+        _preflight_fail(f"--peaks file '{args.peaks}' is empty.")
+    print(
+        f"[run_bindetect_safe]   peaks: {n_peaks} regions, {peak_columns} "
+        f"columns, {len(peak_chroms)} unique chromosomes",
+        flush=True,
+    )
+
+    if args.peak_header:
+        with open(args.peak_header) as fh:
+            header_list = fh.read().split()
+        if len(header_list) != peak_columns:
+            _preflight_fail(
+                f"--peak_header '{args.peak_header}' has {len(header_list)} "
+                f"columns but --peaks has {peak_columns} columns."
+            )
+
+    try:
+        import pysam
+
+        fasta = pysam.FastaFile(args.genome)
+        fasta_chroms = set(fasta.references)
+        fasta.close()
+        missing = peak_chroms - fasta_chroms
+        if missing:
+            _preflight_fail(
+                f"{len(missing)} chromosome name(s) in --peaks are not present "
+                f"in --genome '{args.genome}'. Examples missing: "
+                f"{sorted(missing)[:10]}. Genome contains e.g.: "
+                f"{sorted(fasta_chroms)[:10]}. This usually indicates a 'chr' "
+                "prefix mismatch (e.g. '1' vs 'chr1') or wrong genome build."
+            )
+    except ImportError:
+        print(
+            "[run_bindetect_safe]   WARNING: pysam not available, skipping "
+            "genome boundary check",
+            flush=True,
+        )
+
+    try:
+        import pyBigWig
+
+        for sig in args.signals:
+            bw = pyBigWig.open(sig)
+            bw_chroms = set(bw.chroms().keys())
+            bw.close()
+            missing = peak_chroms - bw_chroms
+            if missing:
+                _preflight_fail(
+                    f"{len(missing)} chromosome name(s) in --peaks are not "
+                    f"present in --signals file '{sig}'. Examples missing: "
+                    f"{sorted(missing)[:10]}. Signal file contains e.g.: "
+                    f"{sorted(bw_chroms)[:10]}. This usually indicates a 'chr' "
+                    "prefix mismatch or wrong genome build."
+                )
+    except ImportError:
+        print(
+            "[run_bindetect_safe]   WARNING: pyBigWig not available, skipping "
+            "signal boundary check",
+            flush=True,
+        )
+
+    try:
+        from tobias.utils.motifs import MotifList
+        from tobias.utils.utilities import expand_dirs
+
+        motif_files = expand_dirs([args.motifs])
+        total_motifs = 0
+        for f in motif_files:
+            try:
+                total_motifs += len(MotifList().from_file(f))
+            except Exception as e:
+                _preflight_fail(f"Could not parse motif file '{f}': {e}")
+        print(
+            f"[run_bindetect_safe]   motifs: {total_motifs} motifs parsed "
+            f"from {len(motif_files)} file(s)",
+            flush=True,
+        )
+    except ImportError as e:
+        print(
+            f"[run_bindetect_safe]   WARNING: could not import TOBIAS motif "
+            f"utilities ({e}), skipping motif parse check",
+            flush=True,
+        )
+
+    print("[run_bindetect_safe] Pre-flight checks passed.", flush=True)
+
+
 def bounded_file_writer(q, key_file_dict, args):
     """Drop-in replacement for tobias.utils.utilities.file_writer.
 
@@ -253,6 +386,8 @@ def main():
     # Avoid RecursionError in scipy.cluster.hierarchy.dendrogram for
     # large motif collections.
     _ensure_recursion_limit()
+
+    _preflight_checks(args)
 
     # Monkeypatch both module references used by BINDetect.
     utilities.file_writer = bounded_file_writer
